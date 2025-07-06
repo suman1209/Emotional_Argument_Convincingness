@@ -1,0 +1,6 @@
+numpy
+commitizen
+accelerate
+transformers
+scipy
+datasets
