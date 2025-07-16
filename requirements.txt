@@ -4,3 +4,5 @@ accelerate
 transformers
 scipy
 datasets
+openai
+func-timeout

@@ -1,3 +1,5 @@
+### Initial Setup
+if using the apis, add a local file named openrouter_key.txt
 ### Create Env (In alex cluster)
 
 module load python
