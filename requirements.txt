@@ -6,3 +6,7 @@ scipy
 datasets
 openai
 func-timeout
+matplotlib
+pyyaml
+pandas
+scipy-stats
