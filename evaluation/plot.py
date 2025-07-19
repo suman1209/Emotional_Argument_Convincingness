@@ -5,6 +5,19 @@ import pandas as pd
 from results import AnnotationEvaluator
 import numpy as np
 from scipy import stats
+from matplotlib.lines import Line2D
+
+def get_annotator_ids(data_table):
+    """
+    Extract unique annotator IDs from the data table.
+    
+    Parameters:
+        data_table (pd.DataFrame): DataFrame containing the results with annotator ratings in columns.
+    
+    Returns:
+        list: List of unique annotator IDs.
+    """
+    return [col for col in data_table.columns if isinstance(col, int)]
 
 def plot(x, y,
         x_label='argument_id',
@@ -34,87 +47,120 @@ def plot(x, y,
     plt.tight_layout()
     plt.show()
 
-def plot_rating_histogram(results_table, title='Convincingness Ratings Histogram'):
+def plot_rating_histogram(results_table, save_path=None):
     """
     Plot a histogram of all the convincingness ratings. 
 
     Parameters:
         results_table (pd.DataFrame): DataFrame containing the results with 'median_score' column.
         title (str): Title of the histogram.
+
     """
-    ratings = results_table[1].tolist() + results_table[2].tolist() + results_table[3].tolist()
-    plt.figure(figsize=(10, 6))
-    counts, bins, patches = plt.hist(ratings, bins=range(int(min(ratings)), int(max(ratings)) + 2), align='mid', rwidth=0.8)
-    plt.xticks([(bins[i] + bins[i+1]) / 2 for i in range(len(bins)-1)])
-    plt.title(title)
+    annotator_ids = get_annotator_ids(results_table)
+    ratings = results_table[annotator_ids].values.flatten()
+    fig = plt.figure()
+    plt.grid(axis='y', alpha=0.75, zorder=0)
+    bins = np.arange(min(ratings) - 0.5, max(ratings) + 1.5, 1)
+    plt.hist(ratings, bins=bins, rwidth=0.8, align='mid')
+    plt.xticks(np.arange(min(ratings), max(ratings) + 1))
+    plt.title('Convincingness Ratings Histogram')
     plt.xlabel('Convincingness Rating')
     plt.ylabel('Frequency')
-    plt.grid(axis='y', alpha=0.75)
     plt.tight_layout()
-    plt.show()
+    if save_path:
+        plt.savefig(save_path)
+    else:
+        plt.show()
 
-def plot_annotator_rating_distribution(results_table):
+def plot_annotator_rating_distribution(results_table, save_path=None):
     """
     Plot a violin plot showing the distribution of ratings for each annotator.
 
     Parameters:
-        results_table (pd.DataFrame): DataFrame containing the results with annotator ratings in columns 1, 2, 3.
+        results_table (pd.DataFrame): DataFrame containing the results with annotator ratings in columns.
+        save_path (str, optional): Path to save the plot. If None, the plot will be displayed.
     """
-    annotator_columns = [1, 2, 3]
+    annotator_columns = get_annotator_ids(results_table)
     ratings = [results_table[col].dropna().tolist() for col in annotator_columns]
-    annotator_labels = [f'Annotator {i+1}' for i in range(len(annotator_columns))]
+    annotator_labels = [f'Annotator {annotator_id}' for annotator_id in annotator_columns]
 
-    plt.figure(figsize=(8, 6))
-    plt.violinplot(ratings, showmeans=True, showmedians=True)
+    plt.figure()
+    parts = plt.violinplot(ratings, showmeans=True, showmedians=True, showextrema=False)
+    # Change mean and median colors
+    for b in parts['bodies']:
+        b.set_facecolor('#87CEEB')
+        b.set_alpha(0.7)
+    if 'cmeans' in parts:
+        parts['cmeans'].set_color('red')
+        parts['cmeans'].set_linewidth(2)
+    if 'cmedians' in parts:
+        parts['cmedians'].set_color('green')
+        parts['cmedians'].set_linewidth(2)
+    # Add legend for mean and median
+    legend_elements = [
+        Line2D([0], [0], color='red', lw=2, label='Mean'),
+        Line2D([0], [0], color='green', lw=2, label='Median')
+    ]
+    plt.legend(handles=legend_elements)
     plt.xticks(range(1, len(annotator_labels) + 1), annotator_labels)
     plt.title('Annotator Rating Distribution')
     plt.ylabel('Convincingness Rating')
     plt.tight_layout()
-    plt.show()
+    if save_path:
+        plt.savefig(save_path)
+    else:
+        plt.show()
 
-def plot_aggregated_ratings(results_table):
+def plot_aggregated_ratings(results_table, argument_id: int, save_path=None):
     """
     Plot median, mean, and mode convincingness ratings for each argument.
 
     Parameters:
-        results_table (pd.DataFrame): DataFrame containing 'argument_id', 'context_version', and annotator ratings in columns 1, 2, 3.
+        results_table (pd.DataFrame): DataFrame containing 'argument_id', 'context_version', and annotator ratings in columns.
+        argument_id (int): Argument ID to plot.
+        save_path (str, optional): Path to save the plot. If None, the plot will be displayed.
     """
-
-    argument_ids = results_table['argument_id'].astype(str) + '-' + results_table['context_version'].astype(str)
-    ratings = results_table[[1, 2, 3]]
-
+    annotator_ids = get_annotator_ids(results_table)
+    filtered_results = results_table[results_table['argument_id'] == argument_id]
+    ratings = filtered_results[annotator_ids]
+    context_ids = filtered_results['context_version'].unique()
     medians = ratings.median(axis=1)
     means = ratings.mean(axis=1)
     modes = ratings.mode(axis=1)[0]  # Take the first mode if multiple
 
-    plt.figure(figsize=(12, 6))
+    # Just use 
+
+    plt.figure()
     width = 0.25
-    x = np.arange(len(argument_ids))
+    x = np.arange(len(context_ids))
 
     plt.bar(x - width, medians, width=width, label='Median')
     plt.bar(x, means, width=width, label='Mean')
     plt.bar(x + width, modes, width=width, label='Mode')
 
-    plt.xticks(x, argument_ids)
-    plt.title('Convincingness Ratings per Argument')
-    plt.xlabel('Argument ID')
+    plt.xticks(x, context_ids)
+    plt.title('Convincingness Ratings per Context Version')
+    plt.xlabel('Context ID')
     plt.ylabel('Convincingness Rating')
     plt.xticks(rotation=45)
     plt.legend()
     plt.tight_layout()
-    plt.show()
+
+    if save_path:
+        plt.savefig(save_path)
+    else:
+        plt.show()
 
 if __name__ == "__main__":
-    # Load the data from the CSV fi
-    data = pd.read_csv('evaluation/test.csv')
+    # Load the data from the CSV file
+    print("Loading data...")
+    data = pd.read_csv('evaluation/annotations.csv', delim_whitespace=True)
     evaluator = AnnotationEvaluator(data)
 
     # Extract data for plotting
-    data_table = evaluator.get_result_table() 
-    median_ratings = data_table['median_score']
-    argument_ids = data_table['argument_id'].astype(str) + '-' + data_table['context_version'].astype(str)
+    data_table = evaluator.get_result_table()
 
     # Plot the convincingness ratings
-    # plot_rating_histogram(data_table)
-    # plot_annotator_rating_distribution(data_table)
-    plot_aggregated_ratings(data_table)
+    plot_rating_histogram(data_table, save_path='evaluation/convincingness_histogram.png')
+    plot_annotator_rating_distribution(data_table, save_path='evaluation/annotator_rating_distribution.png')
+    plot_aggregated_ratings(data_table, argument_id=1, save_path='evaluation/aggregated_ratings.png')

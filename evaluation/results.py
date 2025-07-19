@@ -100,7 +100,7 @@ class AnnotationEvaluator:
 
 
 def main():
-    data = pd.read_csv('evaluation/test.csv')
+    data = pd.read_csv('evaluation/annotations.csv', delim_whitespace=True)
     evaluator = AnnotationEvaluator(data)
 
     # Perform all steps
