@@ -113,9 +113,6 @@ Scoring scale:
 ### Claim:
 {claim}
 
-### Emotion:
-{emotion}
-
 ### Context:
 {context}
 
