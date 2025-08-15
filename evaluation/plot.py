@@ -1,11 +1,36 @@
 import matplotlib.pyplot as plt
 import yaml
 import pandas as pd
+import scienceplots
 
 from results import AnnotationEvaluator
 import numpy as np
 from scipy import stats
 from matplotlib.lines import Line2D
+
+
+plt.rcParams.update({
+    "text.usetex": True,  # Set to True if using LaTeX
+    "font.family": "serif",
+    "font.size": 9,
+    "axes.labelsize": 9,
+    "axes.titlesize": 9,
+    "xtick.labelsize": 8,
+    "ytick.labelsize": 8,
+    "legend.fontsize": 8,
+    "figure.dpi": 300,
+    "savefig.dpi": 300,
+    "lines.linewidth": 1.0,
+    "lines.markersize": 4,
+})
+
+def prepare_plotting(n_columns=1):
+    width_in_inches = 3.25
+    golden_ratio = (5 ** 0.5 - 1) / 2  # ~0.618
+    height_in_inches = width_in_inches * golden_ratio
+    fig, ax = plt.subplots(figsize=(width_in_inches, height_in_inches))
+
+    return fig, ax
 
 def get_annotator_ids(data_table):
     """
@@ -38,9 +63,8 @@ def plot(x, y,
         xlabel (str): Label for the x-axis.
         ylabel (str): Label for the y-axis.
     """
-    plt.figure(figsize=(10, 6))
+    prepare_plotting()
     plt.bar(x, y, color='skyblue')
-    plt.title(title)
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
     plt.xticks(rotation=45)
@@ -58,12 +82,11 @@ def plot_rating_histogram(results_table, save_path=None):
     """
     annotator_ids = get_annotator_ids(results_table)
     ratings = results_table[annotator_ids].values.flatten()
-    fig = plt.figure()
+    fig, _ = prepare_plotting()
     plt.grid(axis='y', alpha=0.75, zorder=0)
     bins = np.arange(min(ratings) - 0.5, max(ratings) + 1.5, 1)
     plt.hist(ratings, bins=bins, rwidth=0.8, align='mid')
     plt.xticks(np.arange(min(ratings), max(ratings) + 1))
-    plt.title('Convincingness Ratings Histogram')
     plt.xlabel('Convincingness Rating')
     plt.ylabel('Frequency')
     plt.tight_layout()
@@ -82,9 +105,8 @@ def plot_annotator_rating_distribution(results_table, save_path=None):
     """
     annotator_columns = get_annotator_ids(results_table)
     ratings = [results_table[col].dropna().tolist() for col in annotator_columns]
-    annotator_labels = [f'Annotator {annotator_id}' for annotator_id in annotator_columns]
 
-    plt.figure()
+    prepare_plotting()
     parts = plt.violinplot(ratings, showmeans=True, showmedians=True, showextrema=False)
     # Change mean and median colors
     for b in parts['bodies']:
@@ -102,8 +124,8 @@ def plot_annotator_rating_distribution(results_table, save_path=None):
         Line2D([0], [0], color='green', lw=2, label='Median')
     ]
     plt.legend(handles=legend_elements)
-    plt.xticks(range(1, len(annotator_labels) + 1), annotator_labels)
-    plt.title('Annotator Rating Distribution')
+    plt.xticks(np.arange(1, len(annotator_columns) + 1), annotator_columns)
+    plt.xlabel('Annotator ID')
     plt.ylabel('Convincingness Rating')
     plt.tight_layout()
     if save_path:
@@ -128,9 +150,7 @@ def plot_aggregated_ratings(results_table, argument_id: int, save_path=None):
     means = ratings.mean(axis=1)
     modes = ratings.mode(axis=1)[0]  # Take the first mode if multiple
 
-    # Just use 
-
-    plt.figure()
+    prepare_plotting()
     width = 0.25
     x = np.arange(len(context_ids))
 
@@ -139,10 +159,106 @@ def plot_aggregated_ratings(results_table, argument_id: int, save_path=None):
     plt.bar(x + width, modes, width=width, label='Mode')
 
     plt.xticks(x, context_ids)
-    plt.title('Convincingness Ratings per Context Version')
     plt.xlabel('Context ID')
     plt.ylabel('Convincingness Rating')
     plt.xticks(rotation=45)
+    plt.legend()
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path)
+    else:
+        plt.show()
+
+def plot_unjustified_distribution(results_table, save_path=None):
+    """
+    Plot unjustified rating distribution for each argument.
+
+    Parameters:
+        results_table (pd.DataFrame): DataFrame containing 'argument_id', 'context_version', and annotator ratings in columns.
+        save_path (str, optional): Path to save the plot
+    """
+    unjustified_results = results_table[results_table['context_version'].isin(range(2, 8))]
+    prepare_plotting()
+    for argument_id in unjustified_results['argument_id'].unique():
+        filtered = unjustified_results[unjustified_results['argument_id'] == argument_id]
+        parts = plt.violinplot(
+            filtered['median_score'], positions=[argument_id], widths=0.9, showmeans=True, showmedians=True, showextrema=False
+        )
+        for b in parts['bodies']:
+            b.set_facecolor('#87CEEB')
+            b.set_alpha(0.7)
+        if 'cmeans' in parts:
+            parts['cmeans'].set_color('red')
+            parts['cmeans'].set_linewidth(2)
+        if 'cmedians' in parts:
+            parts['cmedians'].set_color('green')
+            parts['cmedians'].set_linewidth(2)
+        
+    argument_ids = unjustified_results['argument_id'].unique()
+    argument_labels = [f"Argument {arg_id}" for arg_id in argument_ids]
+    plt.xticks(argument_ids, argument_labels, rotation=45)
+    plt.ylim(0.5, 5.5)
+    plt.yticks(np.arange(1, 6, 1))
+    plt.grid(axis='y', alpha=0.75, zorder=0)
+    plt.ylabel('Convincingness Rating')
+    # Add legend for mean and median
+    legend_elements = [
+        Line2D([0], [0], color='red', lw=2, label='Mean'),
+        Line2D([0], [0], color='green', lw=2, label='Median')
+    ]
+    plt.legend()
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path)
+    else:
+        plt.show()
+
+
+def plot_comparison(results_table, save_path=None):
+    """
+    Plot a comparison between justified (context_id=1) and unjustified (context_version=2..7) ratings.
+    """
+    justified = results_table[results_table['context_version'] == 1]
+    unjustified = results_table[results_table['context_version'].isin(range(2, 8))]
+
+    prepare_plotting()
+    for argument_id in unjustified['argument_id'].unique():
+        filtered_unjustified = unjustified[unjustified['argument_id'] == argument_id]
+        filtered_justified = justified[justified['argument_id'] == argument_id]
+        plt.scatter(
+            argument_id, 
+            filtered_justified['median_score'], 
+            color='tab:blue',
+            edgecolors='w', 
+            s=100
+        )
+        parts = plt.violinplot(
+            filtered_unjustified['median_score'], positions=[argument_id], widths=0.9, showmeans=True, showmedians=True, showextrema=False
+        )
+        for b in parts['bodies']:
+            b.set_facecolor('#87CEEB')
+            b.set_alpha(0.7)
+        if 'cmeans' in parts:
+            parts['cmeans'].set_color('red')
+            parts['cmeans'].set_linewidth(2)
+        if 'cmedians' in parts:
+            parts['cmedians'].set_color('green')
+            parts['cmedians'].set_linewidth(2)
+        
+    argument_ids = unjustified['argument_id'].unique()
+    argument_labels = [f"Argument {arg_id}" for arg_id in argument_ids]
+    plt.xticks(argument_ids, argument_labels, rotation=45)
+    plt.ylim(0.5, 5.5)
+    plt.yticks(np.arange(1, 6, 1))
+    plt.grid(axis='y', alpha=0.75, zorder=0)
+    plt.ylabel('Convincingness Rating')
+    # Add legend for mean and median
+    legend_elements = [
+        Line2D([0], [0], color='red', lw=2, label='Mean'),
+        Line2D([0], [0], color='green', lw=2, label='Median')
+    ]
     plt.legend()
     plt.tight_layout()
 
@@ -164,3 +280,5 @@ if __name__ == "__main__":
     plot_rating_histogram(data_table, save_path='evaluation/convincingness_histogram.png')
     plot_annotator_rating_distribution(data_table, save_path='evaluation/annotator_rating_distribution.png')
     plot_aggregated_ratings(data_table, argument_id=1, save_path='evaluation/aggregated_ratings.png')
+    plot_unjustified_distribution(data_table, save_path='evaluation/unjustified_distribution.png')
+    plot_comparison(data_table, save_path='evaluation/comparison_plot.png')

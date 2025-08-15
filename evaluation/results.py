@@ -22,10 +22,25 @@ class AnnotationEvaluator:
         if self.rating_matrix is None:
             self.pivot_annotations()
         
+        print(self.rating_matrix.values.T.shape)
         return krippendorff.alpha(
-            self.rating_matrix.values.T,
+            reliability_data=self.rating_matrix.values.T,
             level_of_measurement='ordinal'
         )
+    
+    def compute_krippendorffs_alpha_per_argument(self):
+        if self.rating_matrix is None:
+            self.pivot_annotations()
+        
+        alpha_per_argument = {}
+        for argument_id in self.rating_matrix.index.get_level_values('argument_id').unique():
+            argument_data = self.rating_matrix.xs(argument_id, level='argument_id')
+            # print(argument_id, argument_data)
+            alpha_per_argument[argument_id] = krippendorff.alpha(
+                argument_data.values.T,
+                level_of_measurement='ordinal'
+            )
+        return alpha_per_argument
         
     def aggregate_median(self):
         """
@@ -94,7 +109,11 @@ class AnnotationEvaluator:
         result_table = result_table.merge(mode_scores, on=['argument_id', 'context_version'], how='left')
         result_table = result_table.merge(mean_scores, on=['argument_id', 'context_version'], how='left')
 
-        # result_table['krippendorff_alpha'] = self.compute_krippendorffs_alpha_ordinal()
+        result_table['krippendorff_alpha'] = self.compute_krippendorffs_alpha_ordinal()
+        alpha_per_argument = self.compute_krippendorffs_alpha_per_argument()
+        # Compute Krippendorff's alpha for each argument
+        result_table['krippendorff_alpha_per_argument'] = result_table['argument_id'].map(alpha_per_argument)
+
         return result_table.reset_index(drop=True)
         
 
@@ -106,6 +125,7 @@ def main():
     # Perform all steps
     rating_matrix = evaluator.pivot_annotations()
     alpha = evaluator.compute_krippendorffs_alpha_ordinal()
+    alpha_per_argument = evaluator.compute_krippendorffs_alpha_per_argument()
     median_scores = evaluator.aggregate_median()
     mode_scores = evaluator.aggregate_mode()
     mean_scores = evaluator.aggregate_mean()
@@ -113,6 +133,7 @@ def main():
     # save the result to a YAML file
     result = {
         'krippendorff_alpha_tot': float(alpha),
+        'krippendorff_alpha_per_argument': alpha_per_argument,
         'rating_matrix': rating_matrix.to_dict(),
         'median_scores': [float(x) for x in median_scores['median_score'].values],
         'mode_scores': [float(x) for x in mode_scores['mode_score'].values],
