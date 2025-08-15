@@ -8,7 +8,7 @@ from scipy.stats import kendalltau
 # from __init__ import *
 from func_timeout import func_set_timeout
 from func_timeout.exceptions import FunctionTimedOut
-from prompt_generator import PROMPT, PROMPT2, eval_dims
+from prompt_generator import PROMPT, PROMPT2, eval_dims, EVALUATION_PROMPT
 
 
 def par_call(client, model, d, temperature=0, max_tokens=None):
@@ -140,7 +140,7 @@ def judge_call(client, model, argument, claim, context, temperature=0.0, max_tok
 
 # LLM as a judge
 def step3(client, model):
-    infile = os.path.join("outputs", "A1_for_LLM.tsv")
+    infile = os.path.join("outputs", "Annotations_for_LLM_all.tsv")
     outfile = os.path.join("outputs", f"A1_for_LLM__{model.split('/')[-1]}_judged.tsv")
 
     # read dataset
