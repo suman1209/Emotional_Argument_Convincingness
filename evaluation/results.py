@@ -36,10 +36,10 @@ class AnnotationEvaluator:
         for argument_id in self.rating_matrix.index.get_level_values('argument_id').unique():
             argument_data = self.rating_matrix.xs(argument_id, level='argument_id')
             # print(argument_id, argument_data)
-            alpha_per_argument[argument_id] = krippendorff.alpha(
+            alpha_per_argument[argument_id] = float(krippendorff.alpha(
                 argument_data.values.T,
                 level_of_measurement='ordinal'
-            )
+            ))
         return alpha_per_argument
         
     def aggregate_median(self):
@@ -115,35 +115,49 @@ class AnnotationEvaluator:
         result_table['krippendorff_alpha_per_argument'] = result_table['argument_id'].map(alpha_per_argument)
 
         return result_table.reset_index(drop=True)
+    
+    def process_data(self, save_path: str = None):
+        """
+        Process the data to compute all necessary statistics and return a summary DataFrame.
+        
+        Returns:
+            pd.DataFrame: A DataFrame containing the results of the evaluation.
+        """
+        rating_matrix = self.pivot_annotations()
+        alpha = self.compute_krippendorffs_alpha_ordinal()
+        alpha_per_argument = self.compute_krippendorffs_alpha_per_argument()
+        median_scores = self.aggregate_median()
+        mode_scores = self.aggregate_mode()
+        mean_scores = self.aggregate_mean()
+
+        # alpha_per_argument_float = {k: float(v) for k, v in alpha_per_argument.items()}
+
+        result = {
+            'krippendorff_alpha_tot': float(alpha),
+            'krippendorff_alpha_per_argument': alpha_per_argument,
+            'rating_matrix': rating_matrix.to_dict(),
+            'median_scores': [float(x) for x in median_scores['median_score'].values],
+            'mode_scores': [float(x) for x in mode_scores['mode_score'].values],
+            'mean_scores': [float(x) for x in mean_scores['mean_score'].values]
+        }
+
+        if save_path:
+            with open(save_path, 'w') as file:
+                yaml.dump(result, file)
+        
+        else:
+            return result
         
 
 
 def main():
-    data = pd.read_csv('evaluation/annotations.csv', delim_whitespace=True)
-    evaluator = AnnotationEvaluator(data)
+    data_human = pd.read_csv('data/annotations.csv', delim_whitespace=True)
+    evaluator_human = AnnotationEvaluator(data_human)
+    evaluator_human.process_data(save_path='evaluation/results_human.yaml')
 
-    # Perform all steps
-    rating_matrix = evaluator.pivot_annotations()
-    alpha = evaluator.compute_krippendorffs_alpha_ordinal()
-    alpha_per_argument = evaluator.compute_krippendorffs_alpha_per_argument()
-    median_scores = evaluator.aggregate_median()
-    mode_scores = evaluator.aggregate_mode()
-    mean_scores = evaluator.aggregate_mean()
-
-    # save the result to a YAML file
-    result = {
-        'krippendorff_alpha_tot': float(alpha),
-        'krippendorff_alpha_per_argument': alpha_per_argument,
-        'rating_matrix': rating_matrix.to_dict(),
-        'median_scores': [float(x) for x in median_scores['median_score'].values],
-        'mode_scores': [float(x) for x in mode_scores['mode_score'].values],
-        'mean_scores': [float(x) for x in mean_scores['mean_score'].values]
-    }
-
-    print(evaluator.get_result_table())
-
-    with open('evaluation/results.yaml', 'w') as file:
-        yaml.dump(result, file)
+    data_llm = pd.read_csv('data/annotations_llm.csv', delim_whitespace=True)
+    evaluator_llm = AnnotationEvaluator(data_llm)
+    evaluator_llm.process_data(save_path='evaluation/results_llm.yaml')
 
 if __name__ == "__main__":
     main()

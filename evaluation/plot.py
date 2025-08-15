@@ -1,7 +1,9 @@
 import matplotlib.pyplot as plt
+import seaborn as sns
 import yaml
 import pandas as pd
 import scienceplots
+import krippendorff
 
 from results import AnnotationEvaluator
 import numpy as np
@@ -24,11 +26,17 @@ plt.rcParams.update({
     "lines.markersize": 4,
 })
 
-def prepare_plotting(n_columns=1):
-    width_in_inches = 3.25
+MODELS = {
+    "deepseek-r1": 11,
+    "gpt-4o": 12,
+    "llama-3.1-70b": 13,
+}
+
+def prepare_plotting(n_columns=1, rows=1, cols=1):
+    width_in_inches = 3.25 * n_columns  # Adjust width based on number of columns
     golden_ratio = (5 ** 0.5 - 1) / 2  # ~0.618
     height_in_inches = width_in_inches * golden_ratio
-    fig, ax = plt.subplots(figsize=(width_in_inches, height_in_inches))
+    fig, ax = plt.subplots(rows, cols, figsize=(width_in_inches, height_in_inches))
 
     return fig, ax
 
@@ -43,33 +51,6 @@ def get_annotator_ids(data_table):
         list: List of unique annotator IDs.
     """
     return [col for col in data_table.columns if isinstance(col, int)]
-
-def plot(x, y,
-        x_label='argument_id',
-        y_label='convincingness_rating',
-        title='Convincingness Ratings',
-        xlabel='Argument ID',
-        ylabel='Convincingness Rating',
-):
-    """
-    Plot the convincingness ratings of arguments.
-
-    Parameters:
-        x (list or pd.Series): Data for the x-axis.
-        y (list or pd.Series): Data for the y-axis.
-        x_label (str): Label for the x-axis data.
-        y_label (str): Label for the y-axis data.
-        title (str): Title of the plot.
-        xlabel (str): Label for the x-axis.
-        ylabel (str): Label for the y-axis.
-    """
-    prepare_plotting()
-    plt.bar(x, y, color='skyblue')
-    plt.xlabel(xlabel)
-    plt.ylabel(ylabel)
-    plt.xticks(rotation=45)
-    plt.tight_layout()
-    plt.show()
 
 def plot_rating_histogram(results_table, save_path=None):
     """
@@ -95,7 +76,7 @@ def plot_rating_histogram(results_table, save_path=None):
     else:
         plt.show()
 
-def plot_annotator_rating_distribution(results_table, save_path=None):
+def plot_annotator_rating_distribution(results_table, save_path=None, llm=False):
     """
     Plot a violin plot showing the distribution of ratings for each annotator.
 
@@ -123,9 +104,13 @@ def plot_annotator_rating_distribution(results_table, save_path=None):
         Line2D([0], [0], color='red', lw=2, label='Mean'),
         Line2D([0], [0], color='green', lw=2, label='Median')
     ]
-    plt.legend(handles=legend_elements)
-    plt.xticks(np.arange(1, len(annotator_columns) + 1), annotator_columns)
-    plt.xlabel('Annotator ID')
+    plt.legend(handles=legend_elements, loc='upper center')
+    if llm:
+        labels = MODELS.keys()
+        plt.xticks(np.arange(1, len(labels) + 1), labels)
+    else:
+        plt.xticks(np.arange(1, len(annotator_columns) + 1), annotator_columns)
+        plt.xlabel('Annotator ID')
     plt.ylabel('Convincingness Rating')
     plt.tight_layout()
     if save_path:
@@ -216,7 +201,7 @@ def plot_unjustified_distribution(results_table, save_path=None):
         plt.show()
 
 
-def plot_comparison(results_table, save_path=None):
+def plot_comparison(results_table, llm_results_table, save_path=None):
     """
     Plot a comparison between justified (context_id=1) and unjustified (context_version=2..7) ratings.
     """
@@ -267,18 +252,109 @@ def plot_comparison(results_table, save_path=None):
     else:
         plt.show()
 
+def plot_llm_annotator_agreement_heatmap(human_table, llm_table, save_path=None):
+    """
+    Plot heatmap of agreement scores between human annotators and LLMs.
+    Requires the AnnotationEvaluator class with compute_agreement_score(annotator_col, model_col).
+    """
+    annotators = get_annotator_ids(human_table)
+    llm_ids = get_annotator_ids(llm_table)
+
+    heatmap_matrix = np.zeros((len(annotators), len(llm_ids)))
+
+    for i, human_id in enumerate(annotators):
+        for j, llm_id in enumerate(llm_ids):
+            # Use Krippendorff's alpha or other agreement metric
+            ratings_1 = human_table[human_id]
+            ratings_2 = llm_table[llm_id]
+            # Only compare where both are not NaN
+            mask = ratings_1.notna() & ratings_2.notna()
+            if mask.sum() > 0:
+                agreement = krippendorff.alpha(
+                    reliability_data=np.vstack((ratings_1[mask], ratings_2[mask])),
+                    level_of_measurement='ordinal'
+                )
+            else:
+                agreement = np.nan
+            heatmap_matrix[i, j] = agreement
+
+    df_heatmap = pd.DataFrame(heatmap_matrix, index=[f"{i+1}" for i in range(len(annotators))],
+                              columns=MODELS.keys())
+
+    fig, ax = prepare_plotting()
+    sns.heatmap(df_heatmap, annot=True, fmt=".2f", cmap="YlGnBu", ax=ax, cbar_kws={"label": "Agreement Score"})
+    ax.set_ylabel("Human Annotator ID")
+    ax.set_title("Annotator vs LLM Agreement")
+    fig.tight_layout()
+
+    if save_path:
+        fig.savefig(save_path)
+    else:
+        plt.show()
+
+def plot_context_type_distribution(human_table, llm_table, save_path=None):
+    """
+    Plot convincingness ratings distribution for justified vs unjustified contexts.
+    """
+    annotator_ids = get_annotator_ids(human_table)
+    melted_human = human_table.melt(
+        id_vars=["argument_id", "context_version"],
+        value_vars=annotator_ids,
+        var_name="source",
+        value_name="rating"
+    )
+    melted_human["source"] = "Human"
+
+    # Load LLM ratings
+    melted_llm = pd.DataFrame()
+    # Compute median rating across the three LLMs for each row
+    llm_cols = list(MODELS.values())
+    temp = llm_table[["argument_id", "context_version"] + llm_cols].copy()
+    temp["rating"] = temp[llm_cols].median(axis=1)
+    temp["source"] = "LLMs"
+    melted_llm = temp[["argument_id", "context_version", "rating", "source"]]
+
+    df_all = pd.concat([melted_human, melted_llm], ignore_index=True)
+    df_all = df_all.dropna(subset=["rating"])
+    df_all["context_type"] = df_all["context_version"].apply(lambda x: "Justified" if x == 1 else "Unjustified")
+
+    fig, ax = prepare_plotting()
+    sns.violinplot(x="context_type", y="rating", hue="source", data=df_all, ax=ax, split=True, inner="quartile")
+
+    # Axes setup
+    ax.set_xlabel("Context Type")
+    ax.set_ylabel("Convincingness Rating")
+    ax.set_ylim(0.5, 5.5)
+    ax.set_yticks(np.arange(1, 6, 1))
+    ax.grid(axis='y', alpha=0.5)
+    ax.legend()
+
+    fig.tight_layout()
+
+    if save_path:
+        fig.savefig(save_path)
+    else:
+        plt.show()
+
 if __name__ == "__main__":
-    # Load the data from the CSV file
-    print("Loading data...")
-    data = pd.read_csv('evaluation/annotations.csv', delim_whitespace=True)
-    evaluator = AnnotationEvaluator(data)
+    # Human evaluation data
+    human_data = pd.read_csv('data/annotations.csv', delim_whitespace=True)
+    human_evaluator = AnnotationEvaluator(human_data)
+    human_data_table = human_evaluator.get_result_table()
 
-    # Extract data for plotting
-    data_table = evaluator.get_result_table()
+    # Plot human ratings
+    plot_rating_histogram(human_data_table, save_path='evaluation/fig/convincingness_histogram.png')
+    plot_annotator_rating_distribution(human_data_table, save_path='evaluation/fig/annotator_rating_distribution.png')
+    plot_aggregated_ratings(human_data_table, argument_id=1, save_path='evaluation/fig/aggregated_ratings.png')
+    plot_unjustified_distribution(human_data_table, save_path='evaluation/fig/unjustified_distribution.png')
 
-    # Plot the convincingness ratings
-    plot_rating_histogram(data_table, save_path='evaluation/convincingness_histogram.png')
-    plot_annotator_rating_distribution(data_table, save_path='evaluation/annotator_rating_distribution.png')
-    plot_aggregated_ratings(data_table, argument_id=1, save_path='evaluation/aggregated_ratings.png')
-    plot_unjustified_distribution(data_table, save_path='evaluation/unjustified_distribution.png')
-    plot_comparison(data_table, save_path='evaluation/comparison_plot.png')
+    # LLM evaluation data
+    llm_data = pd.read_csv('data/annotations_llm.csv', delim_whitespace=True)
+    llm_evaluator = AnnotationEvaluator(llm_data)
+    llm_data_table = llm_evaluator.get_result_table()
+
+    # Plot LLM ratings
+    plot_annotator_rating_distribution(llm_data_table, save_path='evaluation/fig/llm_annotator_rating_distribution.png', llm=True)
+    # plot_comparison(human_data_table, llm_data_table, save_path='evaluation/fig/comparison_plot.png')
+    plot_llm_annotator_agreement_heatmap(human_data_table, llm_data_table, save_path='evaluation/fig/llm_annotator_agreement_heatmap.png')
+    plot_context_type_distribution(human_data_table, llm_data_table, save_path='evaluation/fig/context_type_distribution.png')
