@@ -3,7 +3,7 @@ import pandas as pd
 import yaml
 import krippendorff
 
-from scipy.stats import mode, zscore
+from scipy.stats import mode, zscore, wilcoxon
 
 class AnnotationEvaluator:
     def __init__(self, data: pd.DataFrame):
@@ -29,6 +29,52 @@ class AnnotationEvaluator:
         rating_matrix['krippendorff_alpha_per_argument'] = rating_matrix['argument_id'].map(alpha_per_argument)
 
         return rating_matrix
+    
+    def compute_wilcoxon_signed_rank(self, rating_matrix: pd.DataFrame):
+        """
+        Compute the Wilcoxon signed-rank test for paired samples.
+
+        Args:
+            rating_matrix (pd.DataFrame): A DataFrame where rows are argument_id and context_version
+                                          and columns are annotator_id with their ratings.
+        
+        Returns:
+            tuple: A tuple containing the test statistic and p-value.
+        """        
+        # Group by justified and unjustified contexts
+        justified_context_version = 1
+        unjustified_versions = list(range(2, 8))
+
+        # Prepare paired data
+        paired_justified = []
+        paired_unjustified = []
+
+        for arg_id in rating_matrix['argument_id'].unique():
+            arg_rows = rating_matrix[rating_matrix['argument_id'] == arg_id]
+            justified_row = arg_rows[arg_rows['context_version'] == justified_context_version]
+            if justified_row.empty:
+                continue
+            justified_score = justified_row['median_score'].values[0]
+
+            # Get all unjustified context scores for this argument
+            unjustified_rows = arg_rows[arg_rows['context_version'].isin(unjustified_versions)]
+            unjustified_scores = unjustified_rows['median_score'].dropna().values
+            if len(unjustified_scores) == 0:
+                continue
+
+            # Use average of unjustified scores
+            unjustified_score = unjustified_scores.mean()
+            paired_justified.append(justified_score)
+            paired_unjustified.append(unjustified_score)
+
+        print(f"Paired justified scores: {paired_justified}",
+              f"\nPaired unjustified scores: {paired_unjustified}")
+
+        # Run the one-sided Wilcoxon test (H1: justified > unjustified)
+        stat, p_value = wilcoxon(paired_justified, paired_unjustified, alternative='greater')
+        print(f"Wilcoxon test statistic: {stat}, p-value: {p_value}")
+
+        return stat, p_value
 
     def compute_krippendorffs_alpha_ordinal(self, rating_matrix: pd.DataFrame):
         """
@@ -148,6 +194,7 @@ class AnnotationEvaluator:
         median_scores = list(self.rating_matrix['median_score'].values)
         mode_scores = list(self.rating_matrix['mode_score'].values)
         mean_scores = list(self.rating_matrix['mean_score'].values)
+        stat, p_value = self.compute_wilcoxon_signed_rank(self.rating_matrix)
 
         # alpha_per_argument_float = {k: float(v) for k, v in alpha_per_argument.items()}
 
@@ -157,7 +204,9 @@ class AnnotationEvaluator:
             'rating_matrix': self.rating_matrix.to_dict(),
             'median_scores': [float(x) for x in median_scores],
             'mode_scores': [float(x) for x in mode_scores],
-            'mean_scores': [float(x) for x in mean_scores]
+            'mean_scores': [float(x) for x in mean_scores],
+            'wilcoxon_stat': float(stat),
+            'wilcoxon_p_value': float(p_value)
         }
 
         if save_path:
@@ -176,7 +225,6 @@ def main():
         human_data = pd.read_csv(f'data/{dataset}/annotations.csv', delim_whitespace=True)
         human_evaluator = AnnotationEvaluator(human_data)
         human_evaluator.process_data(save_path=f'evaluation/{dataset}/results_human.yaml')
-        print(human_evaluator.rating_matrix)
 
         # LLM evaluation data
         if dataset == 'v1':
