@@ -6,6 +6,7 @@ import pandas as pd
 import scienceplots
 import krippendorff
 from typing import Optional
+import params
 
 from results import AnnotationEvaluator
 import numpy as np
@@ -202,7 +203,6 @@ def plot_unjustified_distribution(results_table, save_path=None):
     else:
         plt.show()
 
-
 def plot_comparison(results_table, llm_results_table, save_path=None):
     """
     Plot a comparison between justified (context_id=1) and unjustified (context_version=2..7) ratings.
@@ -260,7 +260,7 @@ def plot_llm_annotator_agreement_heatmap(human_table, llm_table, save_path=None)
     Requires the AnnotationEvaluator class with compute_agreement_score(annotator_col, model_col).
     """
     # Prepare labels: "Human Median" + LLM names
-    labels = ["Annotations"] + list(MODELS.keys())
+    labels = ["Human"] + list(MODELS.keys())
     n = len(labels)
 
     # Prepare ratings for each source
@@ -272,7 +272,7 @@ def plot_llm_annotator_agreement_heatmap(human_table, llm_table, save_path=None)
     for llm_id in MODELS.values():
         sources.append(llm_table[llm_id])
 
-    # Compute agreement scores for all pairs (including human median)
+    # Compute agreement scores for all pairs (including human median) using Spearman correlation
     heatmap_matrix = np.zeros((n, n))
     for i in range(n):
         for j in range(n):
@@ -280,10 +280,9 @@ def plot_llm_annotator_agreement_heatmap(human_table, llm_table, save_path=None)
             ratings_j = sources[j]
             mask = ratings_i.notna() & ratings_j.notna()
             if mask.sum() > 0 and j <= i:
-                agreement = krippendorff.alpha(
-                    reliability_data=np.vstack((ratings_i[mask], ratings_j[mask])),
-                    level_of_measurement='ordinal'
-                )
+                # Spearman correlation
+                corr, _ = stats.spearmanr(ratings_i[mask], ratings_j[mask])
+                agreement = corr
             else:
                 agreement = np.nan
             heatmap_matrix[i, j] = agreement
@@ -291,7 +290,7 @@ def plot_llm_annotator_agreement_heatmap(human_table, llm_table, save_path=None)
     df_heatmap = pd.DataFrame(heatmap_matrix, index=labels, columns=labels)
 
     fig, ax = prepare_plotting()
-    sns.heatmap(df_heatmap, annot=True, fmt=".2f", cmap="YlGnBu", ax=ax, cbar_kws={"label": "Agreement Score"}, vmin=0, vmax=1)
+    sns.heatmap(df_heatmap, annot=True, fmt=".2f", cmap="YlGnBu", ax=ax, cbar_kws={"label": r"Rank Correlation $\rho$"}, vmin=0, vmax=1)
     plt.tight_layout()
 
     if save_path:
@@ -423,10 +422,70 @@ def plot_context_type_distribution_per_annotator(human_table, llm_table=None, sa
     ax.set_ylim(0.5, 5.5)
     ax.set_yticks(np.arange(1, 6, 1))
     ax.grid(axis='y', alpha=0.5)
-    
-    
-    
 
+    if save_path:
+        fig.savefig(save_path)
+    else:
+        plt.show()
+
+def plot_rating_distribution_per_context_dimension(human_table, llm_table=None, save_path=None):
+    """
+    A violin plot for the rating distribution with each unjustified context version (e.g., context 2–7) on the x-axis. 
+    Hue represents Human vs LLM ratings if LLM data is provided.
+
+    Params:
+        human_table (pd.DataFrame): The human ratings table.
+        llm_table (pd.DataFrame, optional): The LLM ratings table.
+        save_path (str, optional): The path to save the plot.
+
+    Returns:
+        None
+    """
+    human_annotator_ids = get_annotator_ids(human_table)
+    llms = list(MODELS.keys())
+    annotator_labels = human_annotator_ids + llms
+
+    # Human ratings
+    ratings_per_context = pd.DataFrame()
+    for context_version in range(2, 8):
+        ratings = human_table[human_table['context_version'] == context_version]
+        ratings_per_context = pd.concat([ratings_per_context, pd.DataFrame({
+            'context_version': context_version - 1,  # Shift by -1
+            'rating': ratings['median_score'],
+            'source': 'Human'
+        })])
+
+    # LLM ratings
+    if llm_table is not None:
+        for context_version in range(2, 8):
+            ratings = llm_table[llm_table['context_version'] == context_version]
+            ratings_per_context = pd.concat([ratings_per_context, pd.DataFrame({
+                'context_version': context_version - 1,  # Shift by -1
+                'rating': ratings['median_score'],
+                'source': 'LLM'
+            })])
+
+    fig, ax = prepare_plotting()
+
+    # Create a violin plot
+    sns.violinplot(
+        x='context_version',
+        y='rating',
+        hue='source' if llm_table is not None else None,
+        data=ratings_per_context,
+        inner="quartile",
+        split=True if llm_table is not None else False,
+        ax=ax,
+        legend=True if llm_table is not None else False,
+        density_norm='count',
+    )
+    fig.tight_layout()
+    ax.set_xlabel("Context Version")
+    ax.set_ylabel("Convincingness Rating")
+    ax.set_ylim(0.5, 5.5)
+    ax.set_yticks(np.arange(1, 6, 1))
+    ax.grid(axis='y', alpha=0.5)
+    ax.legend() if llm_table is not None else None
 
     if save_path:
         fig.savefig(save_path)
@@ -439,7 +498,7 @@ if __name__ == "__main__":
     for dataset in datasets:
         # Human evaluation data
         human_data = pd.read_csv(f'data/{dataset}/annotations.csv', delim_whitespace=True)
-        human_evaluator = AnnotationEvaluator(human_data)
+        human_evaluator = AnnotationEvaluator(human_data, remove_context_ids=params.excluded_context_ids)
         human_data_table = human_evaluator.get_result_table()
 
         # Plot human ratings
@@ -451,7 +510,7 @@ if __name__ == "__main__":
         if dataset == 'v1':
             # LLM evaluation data
             llm_data = pd.read_csv(f'data/{dataset}/annotations_llm.csv', delim_whitespace=True)
-            llm_evaluator = AnnotationEvaluator(llm_data)
+            llm_evaluator = AnnotationEvaluator(llm_data, remove_context_ids=params.excluded_context_ids)
             llm_data_table = llm_evaluator.get_result_table()
 
             # Plot LLM ratings
@@ -460,5 +519,7 @@ if __name__ == "__main__":
             plot_llm_annotator_agreement_heatmap(human_data_table, llm_data_table, save_path=f'evaluation/{dataset}/fig/llm_annotator_agreement_heatmap.png')
             plot_context_type_distribution(human_data_table, llm_data_table, save_path=f'evaluation/{dataset}/fig/context_type_distribution.png')
             plot_context_type_distribution_per_annotator(human_data_table, llm_data_table, save_path=f'evaluation/{dataset}/fig/context_type_distribution_per_annotator.png')
+            plot_rating_distribution_per_context_dimension(human_data_table, llm_data_table, save_path=f'evaluation/{dataset}/fig/rating_distribution_per_context_dimension.png')
         else:
             plot_context_type_distribution_per_annotator(human_data_table, save_path=f'evaluation/{dataset}/fig/context_type_distribution_per_annotator.png')
+            plot_rating_distribution_per_context_dimension(human_data_table, save_path=f'evaluation/{dataset}/fig/rating_distribution_per_context_dimension.png')

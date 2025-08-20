@@ -2,12 +2,16 @@ import numpy as np
 import pandas as pd
 import yaml
 import krippendorff
+import params
 
 from scipy.stats import mode, zscore, wilcoxon
 
 class AnnotationEvaluator:
-    def __init__(self, data: pd.DataFrame):
+    def __init__(self, data: pd.DataFrame, remove_context_ids: list[int] = None):
         self.data = data
+        # Remove all rows with the specified context_id if provided
+        if remove_context_ids is not None:
+            self.data = self.data[~self.data['context_version'].isin(remove_context_ids)]
         self.rating_matrix = self.init_rating_matrix()
 
     def init_rating_matrix(self):
@@ -223,13 +227,13 @@ def main():
     for dataset in datasets:
         # Human evaluation data
         human_data = pd.read_csv(f'data/{dataset}/annotations.csv', delim_whitespace=True)
-        human_evaluator = AnnotationEvaluator(human_data)
+        human_evaluator = AnnotationEvaluator(human_data, remove_context_ids=params.excluded_context_ids)  
         human_evaluator.process_data(save_path=f'evaluation/{dataset}/results_human.yaml')
 
         # LLM evaluation data
         if dataset == 'v1':
             llm_data = pd.read_csv(f'data/{dataset}/annotations_llm.csv', delim_whitespace=True)
-            llm_evaluator = AnnotationEvaluator(llm_data)
+            llm_evaluator = AnnotationEvaluator(llm_data, remove_context_ids=params.excluded_context_ids)
             llm_evaluator.process_data(save_path=f'evaluation/{dataset}/results_llm.yaml')
 
 if __name__ == "__main__":
