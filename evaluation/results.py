@@ -4,10 +4,17 @@ import yaml
 import krippendorff
 import params
 
+from typing import Optional
 from scipy.stats import mode, zscore, wilcoxon
 
 class AnnotationEvaluator:
-    def __init__(self, data: pd.DataFrame, remove_context_ids: list[int] = None):
+    def __init__(self, data: pd.DataFrame, remove_context_ids: Optional[list[int]] = None):
+        """Initialize the AnnotationEvaluator.
+
+        Args:
+            data (pd.DataFrame): The input data containing annotations.
+            remove_context_ids (Optional[list[int]]): Context IDs to remove from the analysis.
+        """
         self.data = data
         # Remove all rows with the specified context_id if provided
         if remove_context_ids is not None:
@@ -15,6 +22,9 @@ class AnnotationEvaluator:
         self.rating_matrix = self.init_rating_matrix()
 
     def init_rating_matrix(self):
+        """
+        Initialize the rating matrix from the data.
+        """
         rating_matrix = self.data.pivot_table(
             index=['argument_id', 'context_version'],
             columns='annotator_id',
@@ -48,11 +58,8 @@ class AnnotationEvaluator:
         # Group by justified and unjustified contexts
         justified_context_version = 1
         unjustified_versions = list(range(2, 8))
-
-        # Prepare paired data
         paired_justified = []
         paired_unjustified = []
-
         for arg_id in rating_matrix['argument_id'].unique():
             arg_rows = rating_matrix[rating_matrix['argument_id'] == arg_id]
             justified_row = arg_rows[arg_rows['context_version'] == justified_context_version]
@@ -71,12 +78,8 @@ class AnnotationEvaluator:
             paired_justified.append(justified_score)
             paired_unjustified.append(unjustified_score)
 
-        print(f"Paired justified scores: {paired_justified}",
-              f"\nPaired unjustified scores: {paired_unjustified}")
-
-        # Run the one-sided Wilcoxon test (H1: justified > unjustified)
+        # One-sided Wilcoxon test (H1: justified > unjustified)
         stat, p_value = wilcoxon(paired_justified, paired_unjustified, alternative='greater')
-        print(f"Wilcoxon test statistic: {stat}, p-value: {p_value}")
 
         return stat, p_value
 
@@ -159,20 +162,6 @@ class AnnotationEvaluator:
         """
         mean_scores = rating_matrix.mean(axis=1, skipna=True).astype(float).reset_index(name='mean_score')
         return mean_scores
-        
-    def normalize_scores(self, rating_matrix: pd.DataFrame):
-        """
-        Normalize the scores in the rating matrix using z-score normalization.
-
-        Args:
-            rating_matrix (pd.DataFrame): A DataFrame where rows are argument_id and context_version
-                                          and columns are annotator_id with their ratings.
-
-        Returns:
-            pd.DataFrame: A DataFrame with normalized scores.
-        """
-        normalized_matrix = rating_matrix.apply(zscore, axis=1, nan_policy='omit')
-        return normalized_matrix
     
     def get_result_table(self):
         """
@@ -184,23 +173,22 @@ class AnnotationEvaluator:
         """
         return self.rating_matrix.reset_index(drop=True)
     
-    def process_data(self, save_path: str = None):
+    def process_data(self, save_path: Optional[str] = None):
         """
         Process the data to compute all necessary statistics and return a summary DataFrame.
-        
+
+        Args:
+            save_path (str, optional): The path to save the results as a YAML file.
+
         Returns:
             pd.DataFrame: A DataFrame containing the results of the evaluation.
         """
-
-        
         alpha = self.rating_matrix['krippendorff_alpha'].iloc[0]
         alpha_per_argument = self.rating_matrix['krippendorff_alpha_per_argument'].to_dict()
         median_scores = list(self.rating_matrix['median_score'].values)
         mode_scores = list(self.rating_matrix['mode_score'].values)
         mean_scores = list(self.rating_matrix['mean_score'].values)
         stat, p_value = self.compute_wilcoxon_signed_rank(self.rating_matrix)
-
-        # alpha_per_argument_float = {k: float(v) for k, v in alpha_per_argument.items()}
 
         result = {
             'krippendorff_alpha_tot': float(alpha),
@@ -212,27 +200,24 @@ class AnnotationEvaluator:
             'wilcoxon_stat': float(stat),
             'wilcoxon_p_value': float(p_value)
         }
-
         if save_path:
             with open(save_path, 'w') as file:
                 yaml.dump(result, file)
-        
         else:
             return result
         
 
-
 def main():
-    datasets = ['v1', 'v2'] 
+    datasets = ['EmAp-r1', 'EmAp-gpt'] 
     for dataset in datasets:
         # Human evaluation data
-        human_data = pd.read_csv(f'data/{dataset}/annotations.csv', delim_whitespace=True)
+        human_data = pd.read_csv(f'datasets/{dataset}/annotations.csv', delim_whitespace=True)
         human_evaluator = AnnotationEvaluator(human_data, remove_context_ids=params.excluded_context_ids)  
         human_evaluator.process_data(save_path=f'evaluation/{dataset}/results_human.yaml')
 
         # LLM evaluation data
-        if dataset == 'v1':
-            llm_data = pd.read_csv(f'data/{dataset}/annotations_llm.csv', delim_whitespace=True)
+        if dataset == 'EmAp-r1':
+            llm_data = pd.read_csv(f'datasets/{dataset}/annotations_llm.csv', delim_whitespace=True)
             llm_evaluator = AnnotationEvaluator(llm_data, remove_context_ids=params.excluded_context_ids)
             llm_evaluator.process_data(save_path=f'evaluation/{dataset}/results_llm.yaml')
 

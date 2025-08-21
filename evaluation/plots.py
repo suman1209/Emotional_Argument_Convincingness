@@ -6,16 +6,15 @@ import pandas as pd
 import scienceplots
 import krippendorff
 from typing import Optional
-import params
 
 from results import AnnotationEvaluator
 import numpy as np
 from scipy import stats
 from matplotlib.lines import Line2D
 
-
+# Matplotlib parameter for ACL style
 plt.rcParams.update({
-    "text.usetex": True,  # Set to True if using LaTeX
+    "text.usetex": True,
     "font.family": "serif",
     "font.size": 9,
     "axes.labelsize": 9,
@@ -35,9 +34,22 @@ MODELS = {
     "llama-3.1-70b": 13,
 }
 
+excluded_context_ids = []
+
 def prepare_plotting(n_columns=1, rows=1, cols=1):
-    width_in_inches = 3.25 * n_columns  # Adjust width based on number of columns
-    golden_ratio = (5 ** 0.5 - 1) / 2  # ~0.618
+    """
+    Prepare the plotting environment with specified dimensions.
+
+    Args:
+        n_columns (int): Number of columns in the the width relates in the paper.
+        rows (int): Number of rows in the plot.
+        cols (int): Number of columns in the plot.
+
+    Returns:
+        tuple: A tuple containing the figure and axes objects.
+    """
+    width_in_inches = 3.25 * n_columns
+    golden_ratio = (5 ** 0.5 - 1) / 2  
     height_in_inches = width_in_inches * golden_ratio
     fig, ax = plt.subplots(rows, cols, figsize=(width_in_inches, height_in_inches))
 
@@ -47,7 +59,7 @@ def get_annotator_ids(data_table):
     """
     Extract unique annotator IDs from the data table.
     
-    Parameters:
+    Args:
         data_table (pd.DataFrame): DataFrame containing the results with annotator ratings in columns.
     
     Returns:
@@ -59,10 +71,9 @@ def plot_rating_histogram(results_table, save_path=None):
     """
     Plot a histogram of all the convincingness ratings. 
 
-    Parameters:
+    Args:
         results_table (pd.DataFrame): DataFrame containing the results with 'median_score' column.
         title (str): Title of the histogram.
-
     """
     annotator_ids = get_annotator_ids(results_table)
     ratings = results_table[annotator_ids].values.flatten()
@@ -83,7 +94,7 @@ def plot_annotator_rating_distribution(results_table, save_path=None, llm=False)
     """
     Plot a violin plot showing the distribution of ratings for each annotator.
 
-    Parameters:
+    Args:
         results_table (pd.DataFrame): DataFrame containing the results with annotator ratings in columns.
         save_path (str, optional): Path to save the plot. If None, the plot will be displayed.
     """
@@ -125,7 +136,7 @@ def plot_aggregated_ratings(results_table, argument_id: int, save_path=None):
     """
     Plot median, mean, and mode convincingness ratings for each argument.
 
-    Parameters:
+    Args:
         results_table (pd.DataFrame): DataFrame containing 'argument_id', 'context_version', and annotator ratings in columns.
         argument_id (int): Argument ID to plot.
         save_path (str, optional): Path to save the plot. If None, the plot will be displayed.
@@ -141,11 +152,9 @@ def plot_aggregated_ratings(results_table, argument_id: int, save_path=None):
     prepare_plotting()
     width = 0.25
     x = np.arange(len(context_ids))
-
     plt.bar(x - width, medians, width=width, label='Median')
     plt.bar(x, means, width=width, label='Mean')
     plt.bar(x + width, modes, width=width, label='Mode')
-
     plt.xticks(x, context_ids)
     plt.xlabel('Context ID')
     plt.ylabel('Convincingness Rating')
@@ -162,12 +171,14 @@ def plot_unjustified_distribution(results_table, save_path=None):
     """
     Plot unjustified rating distribution for each argument.
 
-    Parameters:
+    Args:
         results_table (pd.DataFrame): DataFrame containing 'argument_id', 'context_version', and annotator ratings in columns.
         save_path (str, optional): Path to save the plot
     """
     unjustified_results = results_table[results_table['context_version'].isin(range(2, 8))]
     prepare_plotting()
+
+    # Plot violin plots for each argument
     for argument_id in unjustified_results['argument_id'].unique():
         filtered = unjustified_results[unjustified_results['argument_id'] == argument_id]
         parts = plt.violinplot(
@@ -190,58 +201,6 @@ def plot_unjustified_distribution(results_table, save_path=None):
     plt.yticks(np.arange(1, 6, 1))
     plt.grid(axis='y', alpha=0.75, zorder=0)
     plt.ylabel('Convincingness Rating')
-    # Add legend for mean and median
-    legend_elements = [
-        Line2D([0], [0], color='red', lw=2, label='Mean'),
-        Line2D([0], [0], color='green', lw=2, label='Median')
-    ]
-    plt.legend()
-    plt.tight_layout()
-
-    if save_path:
-        plt.savefig(save_path)
-    else:
-        plt.show()
-
-def plot_comparison(results_table, llm_results_table, save_path=None):
-    """
-    Plot a comparison between justified (context_id=1) and unjustified (context_version=2..7) ratings.
-    """
-    justified = results_table[results_table['context_version'] == 1]
-    unjustified = results_table[results_table['context_version'].isin(range(2, 8))]
-
-    prepare_plotting()
-    for argument_id in unjustified['argument_id'].unique():
-        filtered_unjustified = unjustified[unjustified['argument_id'] == argument_id]
-        filtered_justified = justified[justified['argument_id'] == argument_id]
-        plt.scatter(
-            argument_id, 
-            filtered_justified['median_score'], 
-            color='tab:blue',
-            edgecolors='w', 
-            s=100
-        )
-        parts = plt.violinplot(
-            filtered_unjustified['median_score'], positions=[argument_id], widths=0.9, showmeans=True, showmedians=True, showextrema=False
-        )
-        for b in parts['bodies']:
-            b.set_facecolor('#87CEEB')
-            b.set_alpha(0.7)
-        if 'cmeans' in parts:
-            parts['cmeans'].set_color('red')
-            parts['cmeans'].set_linewidth(2)
-        if 'cmedians' in parts:
-            parts['cmedians'].set_color('green')
-            parts['cmedians'].set_linewidth(2)
-        
-    argument_ids = unjustified['argument_id'].unique()
-    argument_labels = [f"Argument {arg_id}" for arg_id in argument_ids]
-    plt.xticks(argument_ids, argument_labels, rotation=45)
-    plt.ylim(0.5, 5.5)
-    plt.yticks(np.arange(1, 6, 1))
-    plt.grid(axis='y', alpha=0.75, zorder=0)
-    plt.ylabel('Convincingness Rating')
-    # Add legend for mean and median
     legend_elements = [
         Line2D([0], [0], color='red', lw=2, label='Mean'),
         Line2D([0], [0], color='green', lw=2, label='Median')
@@ -256,8 +215,12 @@ def plot_comparison(results_table, llm_results_table, save_path=None):
 
 def plot_llm_annotator_agreement_heatmap(human_table, llm_table, save_path=None):
     """
-    Plot heatmap of agreement scores between all annotations.
-    Requires the AnnotationEvaluator class with compute_agreement_score(annotator_col, model_col).
+    Plot heatmap of agreement scores (Spearman correlation) between human annotators and LLMs.
+
+    Args:
+        human_table (pd.DataFrame): DataFrame containing human annotator ratings.
+        llm_table (pd.DataFrame): DataFrame containing LLM ratings.
+        save_path (str, optional): Path to save the plot.
     """
     # Prepare labels: "Human Median" + LLM names
     labels = ["Human"] + list(MODELS.keys())
@@ -301,6 +264,11 @@ def plot_llm_annotator_agreement_heatmap(human_table, llm_table, save_path=None)
 def plot_context_type_distribution(human_table, llm_table, save_path=None):
     """
     Plot convincingness ratings distribution for justified vs unjustified contexts.
+
+    Args:
+        human_table (pd.DataFrame): DataFrame containing human annotator ratings.
+        llm_table (pd.DataFrame): DataFrame containing LLM ratings.
+        save_path (str, optional): Path to save the plot.
     """
     annotator_ids = get_annotator_ids(human_table)
     melted_human = human_table.melt(
@@ -313,21 +281,19 @@ def plot_context_type_distribution(human_table, llm_table, save_path=None):
 
     # Load LLM ratings
     melted_llm = pd.DataFrame()
+
     # Compute median rating across the three LLMs for each row
     llm_cols = list(MODELS.values())
     temp = llm_table[["argument_id", "context_version"] + llm_cols].copy()
     temp["rating"] = temp[llm_cols].median(axis=1)
     temp["source"] = "LLMs"
     melted_llm = temp[["argument_id", "context_version", "rating", "source"]]
-
     df_all = pd.concat([melted_human, melted_llm], ignore_index=True)
     df_all = df_all.dropna(subset=["rating"])
     df_all["context_type"] = df_all["context_version"].apply(lambda x: "Justified" if x == 1 else "Unjustified")
 
     fig, ax = prepare_plotting()
     sns.violinplot(x="context_type", y="rating", hue="source", data=df_all, ax=ax, split=True, inner="quartile", density_norm='width')
-
-    # Axes setup
     ax.set_xlabel("Context Type")
     ax.set_ylabel("Convincingness Rating")
     ax.set_ylim(0.5, 5.5)
@@ -345,6 +311,11 @@ def plot_context_type_distribution(human_table, llm_table, save_path=None):
 def plot_context_type_distribution_per_annotator(human_table, llm_table=None, save_path=None):
     """
     Plot convincingness ratings distribution for justified vs unjustified contexts per annotator.
+
+    Args:
+        human_table (pd.DataFrame): DataFrame containing human annotator ratings.
+        llm_table (pd.DataFrame, optional): DataFrame containing LLM ratings.
+        save_path (str, optional): Path to save the plot.
     """
     human_annotator_ids = get_annotator_ids(human_table)
     llms = list(MODELS.keys())
@@ -433,13 +404,10 @@ def plot_rating_distribution_per_context_dimension(human_table, llm_table=None, 
     A violin plot for the rating distribution with each unjustified context version (e.g., context 2–7) on the x-axis. 
     Hue represents Human vs LLM ratings if LLM data is provided.
 
-    Params:
+    Args:
         human_table (pd.DataFrame): The human ratings table.
         llm_table (pd.DataFrame, optional): The LLM ratings table.
         save_path (str, optional): The path to save the plot.
-
-    Returns:
-        None
     """
     human_annotator_ids = get_annotator_ids(human_table)
     llms = list(MODELS.keys())
@@ -492,13 +460,13 @@ def plot_rating_distribution_per_context_dimension(human_table, llm_table=None, 
     else:
         plt.show()
 
-if __name__ == "__main__":
-    datasets = ['v1', 'v2']
+def main():
+    datasets = ['EmAp-r1', 'EmAp-gpt']
 
     for dataset in datasets:
         # Human evaluation data
-        human_data = pd.read_csv(f'data/{dataset}/annotations.csv', delim_whitespace=True)
-        human_evaluator = AnnotationEvaluator(human_data, remove_context_ids=params.excluded_context_ids)
+        human_data = pd.read_csv(f'datasets/{dataset}/annotations.csv', delim_whitespace=True)
+        human_evaluator = AnnotationEvaluator(human_data, remove_context_ids=excluded_context_ids)
         human_data_table = human_evaluator.get_result_table()
 
         # Plot human ratings
@@ -507,10 +475,10 @@ if __name__ == "__main__":
         plot_aggregated_ratings(human_data_table, argument_id=1, save_path=f'evaluation/{dataset}/fig/aggregated_ratings.png')
         plot_unjustified_distribution(human_data_table, save_path=f'evaluation/{dataset}/fig/unjustified_distribution.png')
 
-        if dataset == 'v1':
+        if dataset == 'EmAp-r1':
             # LLM evaluation data
-            llm_data = pd.read_csv(f'data/{dataset}/annotations_llm.csv', delim_whitespace=True)
-            llm_evaluator = AnnotationEvaluator(llm_data, remove_context_ids=params.excluded_context_ids)
+            llm_data = pd.read_csv(f'datasets/{dataset}/annotations_llm.csv', delim_whitespace=True)
+            llm_evaluator = AnnotationEvaluator(llm_data, remove_context_ids=excluded_context_ids)
             llm_data_table = llm_evaluator.get_result_table()
 
             # Plot LLM ratings
@@ -523,3 +491,6 @@ if __name__ == "__main__":
         else:
             plot_context_type_distribution_per_annotator(human_data_table, save_path=f'evaluation/{dataset}/fig/context_type_distribution_per_annotator.png')
             plot_rating_distribution_per_context_dimension(human_data_table, save_path=f'evaluation/{dataset}/fig/rating_distribution_per_context_dimension.png')
+
+    if __name__ == "__main__":
+        main()

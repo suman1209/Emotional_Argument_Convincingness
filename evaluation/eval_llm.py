@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
+# This script extracts all LLM annotations from the specified dataset in the right format for further evaluation.
 import csv
 import sys
 from typing import Dict
 from pathlib import Path
+
+DATASET = "EmAp-r1"
 
 WANTED_COLS = ["Argument ID", "Context ID", "judge_score"]
 
@@ -61,12 +64,12 @@ def extract_one_file(tsv_path: Path, annotator_id: int, writer: csv.writer):
             writer.writerow(out_row)
 
 def main():
-    base_dir = Path("data")
+    base_dir = Path(f"datasets/{DATASET}/annotations/")
     combined_output = base_dir / "annotations_llm.csv"
     MODEL_FILES = {
-        "deepseek-r1": base_dir / "Annotations_LLM_deepseek-r1.tsv",
-        "gpt-4o": base_dir / "Annotations_LLM_gpt-4o.tsv",
-        "llama-3.1-70b": base_dir / "Annotations_LLM_llama-3.1-70b.tsv",
+        "deepseek-r1": base_dir / "raw/Annotations_LLM_deepseek-r1.tsv",
+        "gpt-4o": base_dir / "raw/Annotations_LLM_gpt-4o.tsv",
+        "llama-3.1-70b": base_dir / "raw/Annotations_LLM_llama-3.1-70b.tsv",
     }
 
     # Open the output once and stream-append all rows
@@ -79,7 +82,7 @@ def main():
             # Resolve input path
             tsv_path = MODEL_FILES.get(
                 model_name,
-                base_dir / f"Annotations_LLM_{model_name}.tsv"
+                base_dir / f"raw/Annotations_LLM_{model_name}.tsv"
             )
 
             if not Path(tsv_path).exists():
