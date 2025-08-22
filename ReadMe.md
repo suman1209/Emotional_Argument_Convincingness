@@ -1,23 +1,40 @@
-![alt text](images/data_pipeline.png)
+# Emotions: Justified vs. Unjustified Emotional Appeals in Arguments
 
+## Overview
+
+This project studies how **justified** vs. **unjustified** emotional appeals affect an argument’s **convincingness**. We:
+- generate synthetic **argument–context** pairs with LLMs,
+- annotate convincingness with humans and LLMs,
+- compute agreement and significance tests,
+- and produce analysis plots.
+
+## Pipeline 
+![alt text](datasets/data_pipeline.png)
+
+## Quickstart
 ### Initial Setup
-if using the apis, add a local file named openrouter_key.txt
+For using the apis, add a local file named openrouter_key.txt
 
 ### Create Env (In alex cluster)
 
+```bash
 module load python
-
 python3 -m venv emotions
-
 source emotions/bin/activate
-
 pip install -r requirements.txt
+```
 
-### Dataset
+## Dataset
 
 Both datasets `EmAp-r1` and `EmAp-gpt` can be found in the `datsets` directory.
 
-#### Generation
+| Dataset  | #Arguments (Narg) | Total pairs (Ntot) | LLM used    |
+| -------- | ----------------- | ------------------ | ----------- |
+| `EmAp-r1`  | 10                | 54                 | DeepSeek-R1 |
+| `EmAp-gpt` | 10                | 63                 | GPT-4o mini |
+
+
+### Generation
 
 For local inference (requires at least 40GB VRAM)
 ```python
