@@ -1,10 +1,10 @@
 import sys
-from prompt_generator import PROMPT
+from utils.prompt_generator import PROMPT
 # # Use a pipeline as a high-level helper
 from transformers import pipeline
 
 # GENERAL
-models =["deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"]
+models = ["deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"]
 
 # USER PARAMETERS
 DATASET_COUNT = 2
@@ -19,7 +19,7 @@ with open(f"{file_name}.txt", "a+") as fo:
     messages = [
         {"role": "user", "content": PROMPT},
     ]
-    fo.write(f"{PROMPT = }" + "\n")
+    fo.write(f"{PROMPT=}" + "\n")
 
     for i in range(DATASET_COUNT):
         response = pipe(messages)
@@ -30,4 +30,3 @@ with open(f"{file_name}.txt", "a+") as fo:
         except Exception as e:
             extracted_response = f"{e}"
         fo.write(f"### reponse {i} ###" + "\n" + extracted_response + "\n\n")
-    
